@@ -20,27 +20,69 @@ class DatabaseSeeder extends Seeder
         // Reset cached roles and permissions
         app()['cache']->forget('spatie.permission.cache');
 
-        // Create all permissions
+        // Create all permissions - Organized by feature
         $permissions = [
-            // User Management Permissions
-            'view users',
-            'create users',
-            'edit users',
-            'delete users',
-            'export users',
+            // ===== USER MANAGEMENT =====
+            'view users',              // View user list
+            'create users',            // Create new users
+            'edit users',              // Edit user data
+            'delete users',            // Delete users
+            'export users',            // Export user data
+            'manage users role',       // Assign/change user roles
+            'bulk edit users',         // Bulk operations on users
 
-            // System Management Permissions
-            'view system logs',
-            'manage system settings',
-            'view system statistics',
+            // ===== DASHBOARD & STATISTICS =====
+            'view dashboard',          // Access main dashboard
+            'view statistics',         // View system statistics
+            'view reports',            // View reports
+            'export reports',          // Export report data
+            'view analytics',          // View detailed analytics
 
-            // Profile Permissions
-            'edit own profile',
-            'view own profile',
+            // ===== SYSTEM MANAGEMENT =====
+            'view system logs',        // View system logs
+            'manage system logs',      // Delete/archive logs
+            'view system settings',    // View settings
+            'manage system settings',  // Modify settings
+            'manage cache',            // Clear/manage cache
+            'view system health',      // View system health status
 
-            // Verification Permissions
-            'verify users',
-            'approve users',
+            // ===== ROLE MANAGEMENT =====
+            'view roles',              // View roles list
+            'create roles',            // Create new roles
+            'edit roles',              // Modify existing roles
+            'delete roles',            // Delete roles
+            'manage role permissions', // Assign permissions to roles
+
+            // ===== PERMISSION MANAGEMENT =====
+            'view permissions',        // View permissions list
+            'manage permissions',      // Create/edit/delete permissions
+
+            // ===== PROFILE MANAGEMENT =====
+            'edit own profile',        // Edit self profile
+            'view own profile',        // View self profile
+            'edit user profile',       // Edit other user profiles
+            'view user profile',       // View other user profiles
+            'change user password',    // Change user password (admin)
+            'view user activity',      // View user activity logs
+
+            // ===== VERIFICATION & APPROVAL =====
+            'view pending users',      // View pending verification users
+            'verify users',            // Mark users as verified
+            'approve users',           // Approve user requests
+            'reject users',            // Reject user requests
+            'manage verification',     // Manage verification settings
+
+            // ===== AUDIT & ACTIVITY =====
+            'view activity logs',      // View user activity logs
+            'manage activity logs',    // Delete/archive activity logs
+            'view audit trail',        // View audit/system trail
+            'view user actions',       // View specific user actions
+
+            // ===== FILE MANAGEMENT =====
+            'view files',              // View uploaded files
+            'upload files',            // Upload new files
+            'delete files',            // Delete files
+            'manage file storage',     // Manage storage settings
         ];
 
         foreach ($permissions as $permission) {
@@ -55,21 +97,56 @@ class DatabaseSeeder extends Seeder
         // Assign permissions to Admin role (has all permissions)
         $adminRole->syncPermissions(Permission::all());
 
-        // Assign permissions to Manager role
+        // Assign permissions to Manager role (management permissions)
         $managerRole->syncPermissions([
+            // Users
             'view users',
+            'view user profile',
+            'edit user profile',
             'create users',
             'edit users',
-            'view system statistics',
+            'manage users role',
+            'bulk edit users',
+
+            // Dashboard & Reports
+            'view dashboard',
+            'view statistics',
+            'view reports',
+            'export reports',
+            'view analytics',
+
+            // Verification
+            'view pending users',
             'verify users',
+            'approve users',
+
+            // Activity & Logs
+            'view activity logs',
+            'view user activity',
+            'view audit trail',
+
+            // Profile
             'edit own profile',
             'view own profile',
+            'view user profile',
+            'edit user profile',
+
+            // Roles & Permissions (view only)
+            'view roles',
+            'view permissions',
         ]);
 
-        // Assign permissions to User role (limited permissions)
+        // Assign permissions to User role (limited self-service permissions)
         $userRole->syncPermissions([
+            // Profile (self-service only)
             'edit own profile',
             'view own profile',
+
+            // Dashboard (view only)
+            'view dashboard',
+
+            // Activity
+            'view user activity',
         ]);
 
         // Create Admin User
@@ -132,7 +209,11 @@ class DatabaseSeeder extends Seeder
         );
         $regularUser->assignRole('user');
 
-        $this->command->info('✓ Roles and permissions created successfully');
+        $this->command->info('✓ 51 comprehensive permissions created successfully');
+        $this->command->info('✓ Role-based permission assignments completed');
+        $this->command->info('  - Admin: Full access to all features');
+        $this->command->info('  - Manager: User management, verification, view reports & analytics');
+        $this->command->info('  - User: Profile editing, dashboard view, activity logs only');
         $this->command->info('✓ 3 default users created: admin@example.com, manager@example.com, user@example.com');
         $this->command->info('✓ All users set with password: password123');
     }

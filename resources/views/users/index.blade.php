@@ -27,7 +27,7 @@
           <div class="d-flex align-items-center">
             <div class="flex-grow-1">
               <small class="text-muted d-block">Total Users</small>
-              <h5 class="mb-0">{{ \App\Models\User::count() }}</h5>
+              <h5 class="mb-0">{{ $users->total() + request('page', 1) * 0 }}</h5>
             </div>
             <i class="bx bx-user text-primary" style="font-size: 2rem;"></i>
           </div>
@@ -41,7 +41,7 @@
           <div class="d-flex align-items-center">
             <div class="flex-grow-1">
               <small class="text-muted d-block">Active Users</small>
-              <h5 class="mb-0">{{ \App\Models\User::where('is_active', true)->count() }}</h5>
+              <h5 class="mb-0" id="activeCount">0</h5>
             </div>
             <i class="bx bx-check-circle text-success" style="font-size: 2rem;"></i>
           </div>
@@ -55,7 +55,7 @@
           <div class="d-flex align-items-center">
             <div class="flex-grow-1">
               <small class="text-muted d-block">Admins</small>
-              <h5 class="mb-0">{{ \Spatie\Permission\Models\Role::findByName('admin')->users_count ?? 0 }}</h5>
+              <h5 class="mb-0" id="adminCount">0</h5>
             </div>
             <i class="bx bx-crown text-warning" style="font-size: 2rem;"></i>
           </div>
@@ -69,7 +69,7 @@
           <div class="d-flex align-items-center">
             <div class="flex-grow-1">
               <small class="text-muted d-block">Managers</small>
-              <h5 class="mb-0">{{ \Spatie\Permission\Models\Role::findByName('manager')->users_count ?? 0 }}</h5>
+              <h5 class="mb-0" id="managerCount">0</h5>
             </div>
             <i class="bx bx-briefcase text-info" style="font-size: 2rem;"></i>
           </div>
@@ -82,17 +82,17 @@
   <div class="card shadow-sm mb-4 border-0">
     <div class="card-body">
       <form method="GET" action="{{ route('users.index') }}" class="row g-3">
-        <div class="col-md-6">
-          <label class="form-label">Search by Name or Email</label>
+        <div class="col-md-5">
+          <label class="form-label">Search by Name, Email or Phone</label>
           <input 
             type="text" 
             name="search" 
             class="form-control" 
-            placeholder="Search..." 
+            placeholder="e.g. John, john@example.com, +1234567890" 
             value="{{ request('search') }}"
           />
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
           <label class="form-label">Filter by Role</label>
           <select name="role" class="form-select">
             <option value="">All Roles</option>
@@ -103,12 +103,20 @@
             @endforeach
           </select>
         </div>
+        <div class="col-md-2">
+          <label class="form-label">Status</label>
+          <select name="status" class="form-select">
+            <option value="">All</option>
+            <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>Active</option>
+            <option value="inactive" {{ request('status') === 'inactive' ? 'selected' : '' }}>Inactive</option>
+          </select>
+        </div>
         <div class="col-md-2 d-flex align-items-end gap-2">
           <button type="submit" class="btn btn-primary w-100">
             <i class="bx bx-search"></i> Search
           </button>
-          @if(request('search') || request('role'))
-            <a href="{{ route('users.index') }}" class="btn btn-outline-secondary">
+          @if(request('search') || request('role') || request('status'))
+            <a href="{{ route('users.index') }}" class="btn btn-outline-secondary" title="Reset filters">
               <i class="bx bx-reset"></i> Reset
             </a>
           @endif
@@ -262,13 +270,39 @@
 
 @push('page-scripts')
 <script>
-  document.getElementById('deleteModal').addEventListener('show.bs.modal', function (event) {
+// Delete Modal Functionality
+document.getElementById('deleteModal').addEventListener('show.bs.modal', function (event) {
     const button = event.relatedTarget;
     const userId = button.getAttribute('data-user-id');
     const userName = button.getAttribute('data-user-name');
     
     document.getElementById('deleteUserName').textContent = userName;
-    document.getElementById('deleteForm').action = "{{ url('users') }}/" + userId;
-  });
+    document.getElementById('deleteForm').action = "{{ route('users.destroy', ':id') }}".replace(':id', userId);
+});
+
+// Calculate stats from current table data
+document.addEventListener('DOMContentLoaded', function() {
+    let activeCounts = { active: 0, admin: 0, manager: 0 };
+    
+    document.querySelectorAll('tbody tr').forEach(row => {
+        // Count active users
+        const statusBadge = row.querySelector('td:nth-child(5) .badge');
+        if (statusBadge && statusBadge.textContent.trim() === 'Active') {
+            activeCounts.active++;
+        }
+        
+        // Count by role
+        const roleBadges = row.querySelectorAll('td:nth-child(4) .badge');
+        roleBadges.forEach(badge => {
+            const role = badge.textContent.trim().toLowerCase();
+            if (role === 'admin') activeCounts.admin++;
+            if (role === 'manager') activeCounts.manager++;
+        });
+    });
+    
+    document.getElementById('activeCount').textContent = activeCounts.active;
+    document.getElementById('adminCount').textContent = activeCounts.admin;
+    document.getElementById('managerCount').textContent = activeCounts.manager;
+});
 </script>
 @endpush

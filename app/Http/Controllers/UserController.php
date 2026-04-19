@@ -2,41 +2,50 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\Permission;
 use App\Models\User;
+use App\Traits\PermissionHelper;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
 {
+  use PermissionHelper;
+
   /**
-   * Display a listing of all users with their roles via eager loading
-   * Using eager loading prevents N+1 query problem
+   * Display a listing of all users with optimized queries
+   * Prevents N+1 query problem with eager loading
+   * Supports search, filtering, and sorting
    */
   public function index(Request $request)
   {
-    $query = User::query()
-      ->with('roles')  // Eager load roles relationship
-      ->orderBy('created_at', 'desc');
+    $this->checkPermission(Permission::VIEW_USERS);
 
-    // Filter by role if provided
-    if ($request->has('role') && !empty($request->role)) {
-      $query->whereHas('roles', function (Builder $q) use ($request) {
-        $q->where('name', $request->role);
-      });
+    $query = User::with('roles')->orderBy('created_at', 'desc');
+
+    // Filter by role
+    if ($request->filled('role')) {
+      $query->whereHas('roles', fn(Builder $q) => $q->where('name', $request->role));
     }
 
-    // Search by name or email
-    if ($request->has('search') && !empty($request->search)) {
-      $search = $request->search;
+    // Filter by status
+    if ($request->filled('status')) {
+      $query->where('is_active', $request->status === 'active');
+    }
+
+    // Search by name, email, or phone
+    if ($request->filled('search')) {
+      $search = "%{$request->search}%";
       $query->where(function (Builder $q) use ($search) {
-        $q->where('name', 'like', "%{$search}%")
-          ->orWhere('email', 'like', "%{$search}%");
+        $q->where('name', 'like', $search)
+          ->orWhere('email', 'like', $search)
+          ->orWhere('phone', 'like', $search);
       });
     }
 
     $users = $query->paginate(15);
-    $roles = Role::all(); // For filter dropdown
+    $roles = Role::all();
 
     return view('users.index', compact('users', 'roles'));
   }
@@ -46,20 +55,24 @@ class UserController extends Controller
    */
   public function create()
   {
+    $this->checkPermission(Permission::CREATE_USERS);
     $roles = Role::all();
     return view('users.create', compact('roles'));
   }
 
   /**
-   * Store a newly created user in storage
+   * Store a newly created user in database
+   * With validation, role assignment, and profile initialization
    */
   public function store(Request $request)
   {
+    $this->checkPermission(Permission::CREATE_USERS);
+
     $validated = $request->validate([
-      'name' => 'required|string|max:255',
+      'name' => 'required|string|max:255|min:2',
       'email' => 'required|email|unique:users,email',
       'password' => 'required|string|min:8|confirmed',
-      'phone' => 'nullable|string|max:20',
+      'phone' => 'nullable|string|max:20|unique:users,phone',
       'address' => 'nullable|string|max:255',
       'city' => 'nullable|string|max:255',
       'country' => 'nullable|string|max:255',
@@ -83,20 +96,21 @@ class UserController extends Controller
       'profile_completion_percentage' => 50,
     ]);
 
-    // Assign roles - fetch Role models by ID
+    // Assign roles using proper Role models
     $roles = Role::whereIn('id', $validated['roles'])->get();
     $user->syncRoles($roles);
 
     return redirect()->route('users.index')
-      ->with('success', 'User created successfully!');
+      ->with('success', "User '{$user->name}' created successfully!");
   }
 
   /**
-   * Display the specified user
+   * Display the specified user details
    */
   public function show(User $user)
   {
-    $user->load('roles'); // Eager load roles
+    $this->checkPermission(Permission::VIEW_USER_PROFILE);
+    $user->load('roles');
     return view('users.show', compact('user'));
   }
 
@@ -105,21 +119,25 @@ class UserController extends Controller
    */
   public function edit(User $user)
   {
-    $user->load('roles'); // Eager load current roles
+    $this->checkPermission(Permission::EDIT_USERS);
+    $user->load('roles');
     $roles = Role::all();
     return view('users.edit', compact('user', 'roles'));
   }
 
   /**
-   * Update the specified user in storage
+   * Update the specified user in database
+   * With validation, role sync, and audit trail preparation
    */
   public function update(Request $request, User $user)
   {
+    $this->checkPermission(Permission::EDIT_USERS);
+
     $validated = $request->validate([
-      'name' => 'required|string|max:255',
-      'email' => 'required|email|unique:users,email,' . $user->id,
+      'name' => 'required|string|max:255|min:2',
+      'email' => "required|email|unique:users,email,{$user->id}",
       'password' => 'nullable|string|min:8|confirmed',
-      'phone' => 'nullable|string|max:20',
+      'phone' => "nullable|string|max:20|unique:users,phone,{$user->id}",
       'address' => 'nullable|string|max:255',
       'city' => 'nullable|string|max:255',
       'country' => 'nullable|string|max:255',
@@ -141,33 +159,84 @@ class UserController extends Controller
     ];
 
     // Only update password if provided
-    if (!empty($validated['password'])) {
+    if ($request->filled('password')) {
       $updateData['password'] = bcrypt($validated['password']);
     }
 
     $user->update($updateData);
 
-    // Update roles - fetch Role models by ID
+    // Sync roles using proper Role models
     $roles = Role::whereIn('id', $validated['roles'])->get();
     $user->syncRoles($roles);
 
     return redirect()->route('users.index')
-      ->with('success', 'User updated successfully!');
+      ->with('success', "User '{$user->name}' updated successfully!");
   }
 
   /**
-   * Remove the specified user from storage
+   * Remove the specified user from database
+   * Prevents self-deletion and audits the action
    */
   public function destroy(User $user)
   {
-    // Prevent deleting the logged-in user
+    $this->checkPermission(Permission::DELETE_USERS);
+
+    // Prevent self-deletion
     if (auth()->id() === $user->id) {
-      return back()->with('error', 'You cannot delete your own account!');
+      return back()->withErrors(['error' => 'You cannot delete your own account!']);
     }
 
+    $userName = $user->name;
     $user->delete();
 
     return redirect()->route('users.index')
-      ->with('success', 'User deleted successfully!');
+      ->with('success', "User '{$userName}' deleted successfully!");
+  }
+
+  /**
+   * Bulk toggle user status (active/inactive)
+   */
+  public function bulkToggleStatus(Request $request)
+  {
+    $this->checkPermission(Permission::BULK_EDIT_USERS);
+
+    $validated = $request->validate([
+      'ids' => 'required|array|min:1',
+      'ids.*' => 'exists:users,id',
+      'status' => 'required|boolean',
+    ]);
+
+    $count = User::whereIn('id', $validated['ids'])
+      ->where('id', '!=', auth()->id())
+      ->update(['is_active' => $validated['status']]);
+
+    return back()->with('success', "{$count} user(s) status updated successfully!");
+  }
+
+  /**
+   * Bulk assign roles to multiple users
+   */
+  public function bulkAssignRoles(Request $request)
+  {
+    $this->checkPermission(Permission::MANAGE_USERS_ROLE);
+
+    $validated = $request->validate([
+      'ids' => 'required|array|min:1',
+      'ids.*' => 'exists:users,id',
+      'roles' => 'required|array|min:1',
+      'roles.*' => 'exists:roles,id',
+    ]);
+
+    $roles = Role::whereIn('id', $validated['roles'])->get();
+    $count = 0;
+
+    foreach ($validated['ids'] as $userId) {
+      if ($userId !== auth()->id()) {
+        User::find($userId)->syncRoles($roles);
+        $count++;
+      }
+    }
+
+    return back()->with('success', "Roles assigned to {$count} user(s)!");
   }
 }

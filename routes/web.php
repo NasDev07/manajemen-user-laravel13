@@ -101,9 +101,21 @@ Route::middleware('auth')->group(function () {
         return view('dashboards.user');
     })->middleware('role:user,admin,manager')->name('dashboards.user');
 
-    // User Management Routes - Admin/Manager only
-    Route::middleware('role:admin,manager')->group(function () {
-        Route::resource('users', UserController::class);
+    // User Management Routes - with role protection
+    Route::middleware('role:admin,manager')->prefix('users')->name('users.')->group(function () {
+        Route::get('/', [UserController::class, 'index'])->name('index');
+        Route::get('/create', [UserController::class, 'create'])->name('create');
+        Route::post('/', [UserController::class, 'store'])->name('store');
+        Route::get('/{user}', [UserController::class, 'show'])->name('show');
+        Route::get('/{user}/edit', [UserController::class, 'edit'])->name('edit');
+        Route::put('/{user}', [UserController::class, 'update'])->name('update');
+        Route::delete('/{user}', [UserController::class, 'destroy'])->name('destroy');
+
+        // Bulk operations
+        Route::post('/bulk/toggle-status', [UserController::class, 'bulkToggleStatus'])
+            ->name('bulk.toggle-status');
+        Route::post('/bulk/assign-roles', [UserController::class, 'bulkAssignRoles'])
+            ->name('bulk.assign-roles');
     });
 
     // Profile Routes
